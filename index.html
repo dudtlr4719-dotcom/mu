@@ -104,6 +104,32 @@
     margin:0 0 40px;
   }
 
+  .search{
+    margin:0 0 28px;
+  }
+  .search input{
+    width:100%;
+    max-width:420px;
+    background:var(--surface);
+    border:1px solid var(--border);
+    color:var(--text);
+    font-family:inherit;
+    font-size:14px;
+    padding:12px 16px;
+    border-radius:2px;
+    outline:none;
+    transition:border-color .15s ease;
+  }
+  .search input::placeholder{color:var(--text-muted);}
+  .search input:focus{border-color:var(--accent);}
+  .search-count{
+    display:block;
+    margin-top:8px;
+    font-size:12px;
+    letter-spacing:0.04em;
+    color:var(--text-muted);
+  }
+
   .grid{
     display:grid;
     grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
@@ -219,6 +245,11 @@
 
   <p class="sub">셀럽·인플루언서가 MUUT 아이웨어를 착용한 게 뉴스·SNS에 포착될 때마다 이 페이지에 자동으로 쌓입니다. 매일 오전 10:10에 확인하고, 새로 발견된 것만 기록됩니다.</p>
 
+  <div class="search">
+    <input type="text" id="searchInput" placeholder="제품명 또는 착용자로 검색 (예: HORIZON, GON, 곽범)" autocomplete="off">
+    <span class="search-count" id="searchCount"></span>
+  </div>
+
   <div class="grid" id="grid"></div>
 
   <footer>
@@ -244,8 +275,8 @@
   var countLabel = document.getElementById('countLabel');
   var lastChecked = document.getElementById('lastChecked');
   var statusEl = document.getElementById('status');
-
-  countLabel.textContent = entries.length + '건 기록됨';
+  var searchInput = document.getElementById('searchInput');
+  var searchCount = document.getElementById('searchCount');
 
   function fmtDate(iso){
     if(!iso) return '';
@@ -258,18 +289,7 @@
     lastChecked.textContent = '마지막 확인: ' + fmtDate(data.lastChecked);
   }
 
-  if (entries.length === 0) {
-    var empty = document.createElement('div');
-    empty.className = 'empty';
-    empty.innerHTML =
-      '<div class="glyph">◎</div>' +
-      '<h2>아직 포착된 사례가 없습니다</h2>' +
-      '<p>매일 오전 10:10, MUUT 아이웨어를 착용한 셀럽·인플루언서 소식을 자동으로 확인하고 있어요. 발견되는 즉시 이 자리에 사진과 함께 기록됩니다.</p>';
-    grid.appendChild(empty);
-    return;
-  }
-
-  entries.forEach(function(e){
+  function buildCard(e){
     var card = document.createElement('div');
     card.className = 'card';
 
@@ -332,7 +352,61 @@
 
     body.appendChild(meta);
     card.appendChild(body);
-    grid.appendChild(card);
-  });
+    return card;
+  }
+
+  function renderEmpty(kind){
+    var empty = document.createElement('div');
+    empty.className = 'empty';
+    if (kind === 'no-data') {
+      empty.innerHTML =
+        '<div class="glyph">◎</div>' +
+        '<h2>아직 포착된 사례가 없습니다</h2>' +
+        '<p>매일 오전 10:10, MUUT 아이웨어를 착용한 셀럽·인플루언서 소식을 자동으로 확인하고 있어요. 발견되는 즉시 이 자리에 사진과 함께 기록됩니다.</p>';
+    } else {
+      empty.innerHTML =
+        '<div class="glyph">◎</div>' +
+        '<h2>검색 결과가 없습니다</h2>' +
+        '<p>다른 제품명이나 이름으로 다시 검색해보세요.</p>';
+    }
+    grid.appendChild(empty);
+  }
+
+  function renderList(list){
+    grid.innerHTML = '';
+    if (list.length === 0) {
+      renderEmpty(entries.length === 0 ? 'no-data' : 'search');
+      return;
+    }
+    list.forEach(function(e){ grid.appendChild(buildCard(e)); });
+  }
+
+  function updateCounts(filteredLen, query){
+    if (query) {
+      countLabel.textContent = entries.length + '건 기록됨';
+      searchCount.textContent = filteredLen + '건 검색됨';
+    } else {
+      countLabel.textContent = entries.length + '건 기록됨';
+      searchCount.textContent = '';
+    }
+  }
+
+  function applySearch(){
+    var q = (searchInput.value || '').trim().toLowerCase();
+    if (!q) {
+      updateCounts(entries.length, '');
+      renderList(entries);
+      return;
+    }
+    var filtered = entries.filter(function(e){
+      var haystack = ((e.product || '') + ' ' + (e.name || '')).toLowerCase();
+      return haystack.indexOf(q) !== -1;
+    });
+    updateCounts(filtered.length, q);
+    renderList(filtered);
+  }
+
+  searchInput.addEventListener('input', applySearch);
+  applySearch();
 })();
 </script>
