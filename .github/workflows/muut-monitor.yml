@@ -1,0 +1,51 @@
+name: MUUT sighting monitor
+
+on:
+  schedule:
+    - cron: "0 1 * * *"  # 01:00 UTC = 10:00 KST daily
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install dependencies
+        run: pip install --quiet Pillow
+
+      - name: Run monitor
+        id: monitor
+        run: python scripts/muut_monitor.py
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "muut-monitor-bot"
+          git config user.email "actions@github.com"
+          if git diff --quiet -- index.html images/; then
+            echo "No changes to commit."
+          else
+            git add index.html images/
+            git commit -m "Update sightings ($(date -u +%Y-%m-%d))"
+            git push
+          fi
+
+      - name: Open an issue when new sightings were found
+        if: steps.monitor.outputs.new_count != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --title "New MUUT sighting(s) found — ${{ steps.monitor.outputs.new_count }}" \
+            --body "${{ steps.monitor.outputs.new_summary }}
+
+          Site: https://dudtlr4719-dotcom.github.io/mu/
+          Already published by this run — no action needed unless something looks wrong."
