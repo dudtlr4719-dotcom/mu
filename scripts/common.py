@@ -57,6 +57,36 @@ def parse_naver_date(post_html):
     return datetime(y, mo, d, hh, mm).strftime("%Y-%m-%dT%H:%M:00+09:00")
 
 
+def parse_generic_date(html):
+    """Best-effort date extraction for non-Naver pages (news sites, blogs, etc.)."""
+    for pattern in (
+        r'<meta property="article:published_time" content="([^"]+)"',
+        r'<meta property="og:updated_time" content="([^"]+)"',
+        r'<meta itemprop="datePublished" content="([^"]+)"',
+        r'<time[^>]+datetime="([^"]+)"',
+    ):
+        m = re.search(pattern, html)
+        if m:
+            raw = m.group(1)
+            try:
+                dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if dt.tzinfo is None:
+                return dt.strftime("%Y-%m-%dT%H:%M:00+09:00")
+            offset = dt.utcoffset()
+            total_min = int(offset.total_seconds() // 60)
+            sign = "+" if total_min >= 0 else "-"
+            hh, mm = divmod(abs(total_min), 60)
+            return dt.strftime("%Y-%m-%dT%H:%M:00") + f"{sign}{hh:02d}:{mm:02d}"
+    return None
+
+
+def generic_image_url(html):
+    m = re.search(r'<meta property="og:image" content="([^"]*)"', html)
+    return m.group(1) if m else None
+
+
 def toks(s):
     return set(re.findall(r"[가-힣A-Za-z0-9]+", s))
 

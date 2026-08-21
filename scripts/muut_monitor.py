@@ -10,14 +10,30 @@ import os
 import sys
 
 from common import IMAGES_DIR, load_data, save_data
-from finders import finder_naver_search, finder_suwon, finder_wesee
+from finders import (
+    finder_google,
+    finder_instagram,
+    finder_naver_search,
+    finder_suwon,
+    finder_twitter,
+    finder_wesee,
+)
 from organizer import organize
 
 from datetime import datetime
 
 MIN_ENTRIES = 90  # safety check: repo should already have at least this many
 
-FINDERS = [finder_suwon, finder_wesee, finder_naver_search]
+# Trusted/cheap sources first, experimental/Playwright-based ones last — a
+# failure in one finder never stops the others (see the try/except below).
+FINDERS = [
+    finder_suwon,
+    finder_wesee,
+    finder_naver_search,
+    finder_google,
+    finder_instagram,
+    finder_twitter,
+]
 
 
 def main():

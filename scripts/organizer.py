@@ -39,7 +39,7 @@ def _pick_image_url(post_html):
 
 
 def _judge_with_claude(client, candidate, known_names):
-    from common import parse_naver_date
+    from common import parse_generic_date, parse_naver_date
 
     body_text = _strip_tags(candidate["post_html"])
     prompt = (
@@ -86,7 +86,9 @@ def _judge_with_claude(client, candidate, known_names):
     for block in resp.content:
         if block.type == "tool_use":
             result = block.input
-            result["date"] = parse_naver_date(candidate["post_html"])
+            result["date"] = parse_naver_date(candidate["post_html"]) or parse_generic_date(
+                candidate["post_html"]
+            )
             return result
     return None
 
