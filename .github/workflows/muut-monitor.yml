@@ -20,11 +20,13 @@ jobs:
           python-version: "3.x"
 
       - name: Install dependencies
-        run: pip install --quiet Pillow
+        run: pip install --quiet Pillow anthropic
 
       - name: Run monitor
         id: monitor
-        run: python scripts/muut_monitor.py
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: PYTHONPATH=scripts python scripts/muut_monitor.py
 
       - name: Commit and push if changed
         run: |
