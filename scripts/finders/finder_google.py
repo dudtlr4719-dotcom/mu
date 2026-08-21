@@ -1,24 +1,25 @@
-"""Finder: Google search.
+"""Finder: Google search, via the Custom Search JSON API.
 
-Google's search results require JS to render (plain curl gets a
-"noscript, please enable JS" redirect page), so this finder uses Playwright's
-headless Chromium just to load the results page and collect links. Each
-individual result page is then fetched with a plain HTTP request (much
-cheaper than another browser page) for the organizer to judge.
+Plain curl gets a "please enable JS" redirect from google.com/search, and
+even Playwright-rendered scraping got blocked/CAPTCHA'd running from GitHub
+Actions' datacenter IPs (confirmed empirically). The official Custom Search
+API sidesteps both problems — it's a normal authenticated REST call, no
+rendering or IP reputation involved. Free tier: 100 queries/day.
 
-Best-effort: Google is known to rate-limit/CAPTCHA datacenter IPs (which is
-what GitHub Actions runners are), so this finder may come back empty on any
-given day even when nothing is technically wrong. That's logged clearly
-rather than treated as an error.
+Needs two secrets: GOOGLE_API_KEY and GOOGLE_CSE_ID (a Programmable Search
+Engine configured to search the entire web). Without them, this finder logs
+a warning once and returns no candidates rather than failing the run.
 """
 import hashlib
+import json
+import os
 import re
 import urllib.parse
 
-from common import fetch_text, generic_image_url, parse_generic_date
+from common import fetch_text
 
 SOURCE_LABEL = "Google 검색"
-QUERIES = ["MUUT 뭍 선글라스 착용 셀럽", "MUUT eyewear celebrity spotted"]
+QUERIES = ["MUUT 뭍 선글라스 착용", "MUUT eyewear celebrity"]
 SKIP_DOMAINS = ("google.", "naver.com", "youtube.com", "instagram.com", "twitter.com", "x.com")
 
 
@@ -26,47 +27,33 @@ def _make_id(url):
     return "google-" + hashlib.sha1(url.encode("utf-8")).hexdigest()[:12]
 
 
-def _collect_result_links(page, query):
-    url = "https://www.google.com/search?" + urllib.parse.urlencode({"q": query, "hl": "ko", "num": "20"})
-    page.goto(url, timeout=20000, wait_until="domcontentloaded")
-    page.wait_for_timeout(1500)
-    if "did not match any documents" in page.content().lower():
-        return []
-    hrefs = page.eval_on_selector_all("a[href^='http']", "els => els.map(e => e.href)")
-    return hrefs
-
-
 def find(existing_ids):
-    candidates = []
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        print("  [google] playwright not installed, skipping this finder")
+    api_key = os.environ.get("GOOGLE_API_KEY")
+    cse_id = os.environ.get("GOOGLE_CSE_ID")
+    if not api_key or not cse_id:
+        print("  [google] GOOGLE_API_KEY / GOOGLE_CSE_ID not set, skipping this finder")
         return []
 
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch()
-            page = browser.new_page(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            )
-            seen_urls = set()
-            for query in QUERIES:
-                try:
-                    hrefs = _collect_result_links(page, query)
-                except Exception as exc:
-                    print(f"  [google] search failed for {query!r}: {exc}")
-                    continue
-                if not hrefs:
-                    print(f"  [google] no results parsed for {query!r} (likely blocked/CAPTCHA)")
-                seen_urls.update(hrefs)
-            browser.close()
-    except Exception as exc:
-        print(f"  [google] finder failed entirely (browser launch/setup): {exc}")
-        return []
+    candidates = []
+    seen_urls = set()
+    for query in QUERIES:
+        params = {"key": api_key, "cx": cse_id, "q": query, "num": 10, "hl": "ko"}
+        api_url = "https://www.googleapis.com/customsearch/v1?" + urllib.parse.urlencode(params)
+        try:
+            raw = fetch_text(api_url)
+            result = json.loads(raw)
+        except Exception as exc:
+            print(f"  [google] Custom Search API call failed for {query!r}: {exc}")
+            continue
+        if "error" in result:
+            print(f"  [google] API error for {query!r}: {result['error'].get('message')}")
+            continue
+        for item in result.get("items", []):
+            seen_urls.add(item.get("link"))
 
     for url in seen_urls:
+        if not url:
+            continue
         domain = urllib.parse.urlparse(url).netloc.lower()
         if any(skip in domain for skip in SKIP_DOMAINS):
             continue
